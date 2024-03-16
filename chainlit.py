@@ -1,35 +1,22 @@
 
-
-
-@cl.on_message
-async def on_message(message: cl.Message):
-    chain = cl.user_session.get("chain")  # type: LLMChain
-    msg = cl.Message(content="")
-    async for chunk in chain.astream(
-        {"question": message.content},
-        config=RunnableConfig(callbacks=[cl.LangchainCallbackHandler()]),):
-        await msg.stream_token(chunk)
-
-    await msg.send()
-    
     
 import os
 from typing import List
 
-from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 from langchain.chains import (
     ConversationalRetrievalChain,
 )
-from langchain.chat_models import ChatOpenAI
 
 from langchain.docstore.document import Document
 from langchain.memory import ChatMessageHistory, ConversationBufferMemory
 
 import chainlit as cl
 
-os.environ["OPENAI_API_KEY"] = "OPENAI_API_KEY"
+api_key = os.environ.get('GOOGLE_API_KEY')
 
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
 
@@ -42,7 +29,7 @@ async def on_chat_start():
     while files == None:
         files = await cl.AskFileMessage(
             content="Please upload a text file to begin!",
-            accept=["text/plain"],
+            accept=["pdf"],
             max_size_mb=20,
             timeout=180,
         ).send()
@@ -62,7 +49,7 @@ async def on_chat_start():
     metadatas = [{"source": f"{i}-pl"} for i in range(len(texts))]
 
     # Create a Chroma vector store
-    embeddings = OpenAIEmbeddings()
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
     docsearch = await cl.make_async(Chroma.from_texts)(
         texts, embeddings, metadatas=metadatas
     )
@@ -78,7 +65,7 @@ async def on_chat_start():
 
     # Create a chain that uses the Chroma vector store
     chain = ConversationalRetrievalChain.from_llm(
-        ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0, streaming=True),
+        ChatGoogleGenerativeAI(model_name="gemini-pro", temperature=0, streaming=True),
         chain_type="stuff",
         retriever=docsearch.as_retriever(),
         memory=memory,
