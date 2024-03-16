@@ -6,6 +6,7 @@ from typing import List
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.document_loaders import PyPDFLoader
 from langchain.vectorstores import Chroma
 from langchain.chains import (
     ConversationalRetrievalChain,
@@ -39,11 +40,12 @@ async def on_chat_start():
     msg = cl.Message(content=f"Processing `{file.name}`...", disable_feedback=True)
     await msg.send()
 
-    with open(file.path, "r", encoding="utf-8") as f:
-        text = f.read()
+    docs = PyPDFLoader(file.path)
+    # with open(file.path, "r", encoding="utf-8") as f:
+    #     text = f.read()
 
     # Split the text into chunks
-    texts = text_splitter.split_text(text)
+    texts = text_splitter.split_text(docs)
 
     # Create a metadata for each chunk
     metadatas = [{"source": f"{i}-pl"} for i in range(len(texts))]
