@@ -17,8 +17,9 @@ from chainlit.types import AskFileResponse
 
 
 index_name = "langchain-demo"
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=1024, chunk_overlap=24)
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=100, chunk_overlap=100)
 embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+embeddings = Hu
 
 namespaces = set()
 
