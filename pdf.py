@@ -8,7 +8,7 @@ from langchain.chains import ConversationalRetrievalChain
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.memory import ChatMessageHistory, ConversationBufferMemory
 from langchain.docstore.document import Document
-from langchain_community.embeddings.huggingface import HuggingFaceBgeEmbeddings
+from langchain_community.embeddings.huggingface import HuggingFaceEmbeddings
 
 
 
@@ -17,8 +17,11 @@ from chainlit.types import AskFileResponse
 
 
 index_name = "langchain-demo"
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=100, chunk_overlap=100)
-embeddings = HuggingFaceBgeEmbeddings()
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=100, chunk_overlap=20)
+embeddings = HuggingFaceEmbeddings(model_name = "sentence-transformers/all-MiniLM-L6-v2",
+        model_kwargs = {'device': 'cpu'},
+        encode_kwargs = {'normalize_embeddings': False}
+)
 
 namespaces = set()
 
