@@ -1,16 +1,16 @@
 import os
 from typing import List
-from langchain.document_loaders import PyPDFLoader, TextLoader
+from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores.faiss import FAISS
 from langchain.chains import ConversationalRetrievalChain
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+# from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.memory import ChatMessageHistory, ConversationBufferMemory
 from langchain.docstore.document import Document
-# from langchain.vectorstores.chroma
+from langchain_community.embeddings.huggingface import HuggingFaceBgeEmbeddings
 
-import pinecone
+
 
 import chainlit as cl
 from chainlit.types import AskFileResponse
@@ -18,8 +18,7 @@ from chainlit.types import AskFileResponse
 
 index_name = "langchain-demo"
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=100, chunk_overlap=100)
-embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-embeddings = Hu
+embeddings = HuggingFaceBgeEmbeddings()
 
 namespaces = set()
 
