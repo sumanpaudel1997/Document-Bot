@@ -3,9 +3,11 @@
 from langchain_community.embeddings.huggingface import HuggingFaceEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores.faiss import FAISS
+
 from langchain.chains import RetrievalQAWithSourcesChain
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.document_loaders import PyPDFLoader
+from langchain.llms.huggingface_hub import HuggingFaceHub
 from langchain.prompts.chat import (
     ChatPromptTemplate,
     SystemMessagePromptTemplate,
@@ -24,7 +26,7 @@ load_dotenv()
 
 # text_splitter and system template
 
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
 
 system_template = """Use the following pieces of context to answer the users question.
 If you don't know the answer, just say that you don't know, don't try to make up an answer.
@@ -89,11 +91,11 @@ async def on_chat_start():
 
     # Create a chain that uses the Chroma vector store
     chain = RetrievalQAWithSourcesChain.from_chain_type(
-        ChatGoogleGenerativeAI(model="gemini-pro", temperature=0, streaming=True,convert_system_message_to_human=True),
+        GoogleGenerativeAI(model="gemini-pro", temperature=0, streaming=True,convert_system_message_to_human=True),
         chain_type="stuff",
         retriever=docsearch.as_retriever(),
     )
-    
+
 
     # Save the metadata and texts in the user session
     
@@ -114,7 +116,7 @@ async def main(message:str):
         stream_final_answer=True, answer_prefix_tokens=["FINAL", "ANSWER"]
     )
     cb.answer_reached = True
-    res = await chain.acall(message, callbacks=[cb])
+    res = await chain.ainvoke(message, callbacks=[cb])
 
     answer = res["answer"]
     sources = res["sources"].strip()

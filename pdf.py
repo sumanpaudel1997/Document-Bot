@@ -127,5 +127,10 @@ async def main(message: cl.Message):
             answer += f"\nSources: {', '.join(source_names)}"
         else:
             answer += "\nNo sources found"
+    if cb.has_streamed_final_answer:
+        cb.final_stream.elements = source_documents
+        await cb.final_stream.update()
+    else:
+        await cl.Message(content=answer, elements=source_documents).send()
 
-    await cl.Message(content=answer, elements=text_elements).send()
+    
