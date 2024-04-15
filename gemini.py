@@ -1,20 +1,20 @@
 # Import necessary modules and define env variables
 
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.embeddings.huggingface import HuggingFaceEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.vectorstores.faiss import FAISS
-
+from langchain.vectorstores import Chroma
 from langchain.chains import RetrievalQAWithSourcesChain
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from langchain_community.document_loaders import PyPDFLoader
-from langchain.llms.huggingface_hub import HuggingFaceHub
 from langchain.prompts.chat import (
     ChatPromptTemplate,
     SystemMessagePromptTemplate,
     HumanMessagePromptTemplate,
 )
-
+import os
+import io
 import chainlit as cl
+import PyPDF2
+from io import BytesIO
 
 
 from dotenv import load_dotenv
@@ -22,11 +22,12 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+GOOGLE_API_KEY= os.getenv("GOOGLE_API_KEY")
 
 
 # text_splitter and system template
-
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
+embeddings = HuggingFaceEmbeddings(model_name = "sentence-transformers/all-MiniLM-L6-v2")
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
 
 system_template = """Use the following pieces of context to answer the users question.
 If you don't know the answer, just say that you don't know, don't try to make up an answer.
@@ -56,15 +57,18 @@ chain_type_kwargs = {"prompt": prompt}
 @cl.on_chat_start
 async def on_chat_start():
 
-    
-    await cl.Message(content="Hello there, Welcome to AskAnyQuery related to Data!",).send()
+    # Sending an image with the local file path
+    elements = [
+    cl.Image(name="image1", display="inline", path="./robot.jpeg")
+    ]
+    await cl.Message(content="Hello there, Welcome to AskAnyQuery related to Data!", elements=elements).send()
     files = None
 
     # Wait for the user to upload a PDF file
     while files is None:
         files = await cl.AskFileMessage(
-            content="I am SuVin, you can ask me anything !!!",
-            accept=["text/plain", "application/pdf"],
+            content="Please upload a PDF file to begin!",
+            accept=["application/pdf"],
             max_size_mb=20,
             timeout=180,
         ).send()
@@ -74,31 +78,35 @@ async def on_chat_start():
     msg = cl.Message(content=f"Processing `{file.name}`...")
     await msg.send()
 
-    loader = PyPDFLoader(file.path)
-    documents = loader.load()
-    # Split the text into chunks
-    texts = text_splitter.split_documents(documents)
+    # Read the PDF file
+    pdf_stream = BytesIO(file.content)
+    pdf = PyPDF2.PdfReader(pdf_stream)
+    pdf_text = ""
+    for page in pdf.pages:
+        pdf_text += page.extract_text()
 
+    # Split the text into chunks
+    texts = text_splitter.split_text(pdf_text)
+
+    # Create metadata for each chunk
+    metadatas = [{"source": f"{i}-pl"} for i in range(len(texts))]
 
     # Create a Chroma vector store
-    embeddings = HuggingFaceEmbeddings(model_name = "sentence-transformers/all-MiniLM-L6-v2")
-    
-    # embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    
-    docsearch = await cl.make_async(FAISS.from_documents)(
-        texts, embeddings
+    # embeddings = HuggingFaceEmbeddings()
+    docsearch = await cl.make_async(Chroma.from_texts)(
+        texts, embeddings, metadatas=metadatas
     )
 
     # Create a chain that uses the Chroma vector store
     chain = RetrievalQAWithSourcesChain.from_chain_type(
-        ChatGoogleGenerativeAI(model="gemini-pro", temperature=0, streaming=True,convert_system_message_to_human=True),
+        ChatGoogleGenerativeAI(temperature=0),
         chain_type="stuff",
         retriever=docsearch.as_retriever(),
     )
-
+    
 
     # Save the metadata and texts in the user session
-    
+    cl.user_session.set("metadatas", metadatas)
     cl.user_session.set("texts", texts)
 
     # Let the user know that the system is ready
@@ -116,7 +124,7 @@ async def main(message:str):
         stream_final_answer=True, answer_prefix_tokens=["FINAL", "ANSWER"]
     )
     cb.answer_reached = True
-    res = await chain.ainvoke(message, callbacks=[cb])
+    res = await chain.acall(message, callbacks=[cb])
 
     answer = res["answer"]
     sources = res["sources"].strip()
