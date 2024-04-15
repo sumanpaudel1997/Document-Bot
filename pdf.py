@@ -4,8 +4,9 @@ from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores.faiss import FAISS
 from langchain.chains import ConversationalRetrievalChain
-# from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_community.llms.huggingface_hub import HuggingFaceHub
 from langchain.memory import ChatMessageHistory, ConversationBufferMemory
 from langchain.docstore.document import Document
 from langchain_community.embeddings.huggingface import HuggingFaceEmbeddings
@@ -89,8 +90,14 @@ async def start():
         return_messages=True,
     )
 
+    LLM_FALCON_SMALL = "tiiuae/falcon-7b-instruct"
+    LLM_MISTRAL = 'mistralai/Mistral-7B-Instruct-v0.2'
+
+    llm = HuggingFaceHub(repo_id=LLM_FALCON_SMALL)
     chain = ConversationalRetrievalChain.from_llm(
-        ChatGoogleGenerativeAI(model="gemini-pro", temperature=0, streaming=True,convert_system_message_to_human=True),
+        
+        llm,
+        # ChatGoogleGenerativeAI(model="gemini-pro", temperature=0, streaming=True,convert_system_message_to_human=True),
         chain_type="stuff",
         retriever=docsearch.as_retriever(),
         memory=memory,

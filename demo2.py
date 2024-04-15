@@ -1,155 +1,102 @@
-# Import necessary modules and define env variables
-
-from langchain_community.embeddings.huggingface import HuggingFaceEmbeddings
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.vectorstores.faiss import FAISS
-
-from langchain.chains import RetrievalQAWithSourcesChain
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from langchain_community.document_loaders import PyPDFLoader
-from langchain.llms.huggingface_hub import HuggingFaceHub
-from langchain.prompts.chat import (
-    ChatPromptTemplate,
-    SystemMessagePromptTemplate,
-    HumanMessagePromptTemplate,
-)
-
-import chainlit as cl
-
-
+import streamlit as st
 from dotenv import load_dotenv
+from PyPDF2 import PdfReader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+import os
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+import google.generativeai as genai
+from langchain.vectorstores import FAISS
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain.chains.question_answering import load_qa_chain
+from langchain.prompts import PromptTemplate
+# from htmlTemplates import css, bot_template, user_template
 
-# Load environment variables from .env file
 load_dotenv()
 
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
+def get_pdf_text(pdf_docs):
+    text = ""
+    for pdf in pdf_docs:
+        pdf_reader = PdfReader(pdf)
+        for page in pdf_reader.pages:
+            text += page.extract_text()
+    return text
 
-# text_splitter and system template
-
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
-
-system_template = """Use the following pieces of context to answer the users question.
-If you don't know the answer, just say that you don't know, don't try to make up an answer.
-ALWAYS return a "SOURCES" part in your answer.
-The "SOURCES" part should be a reference to the source of the document from which you got your answer.
-
-Example of your response should be:
-
-```
-The answer is foo
-SOURCES: xyz
-```
-
-Begin!
-----------------
-{summaries}"""
-
-
-messages = [
-    SystemMessagePromptTemplate.from_template(system_template),
-    HumanMessagePromptTemplate.from_template("{question}"),
-]
-prompt = ChatPromptTemplate.from_messages(messages)
-chain_type_kwargs = {"prompt": prompt}
-
-
-@cl.on_chat_start
-async def on_chat_start():
-
-    
-    await cl.Message(content="Hello there, Welcome to AskAnyQuery related to Data!",).send()
-    files = None
-
-    # Wait for the user to upload a PDF file
-    while files is None:
-        files = await cl.AskFileMessage(
-            content="I am SuVin, you can ask me anything !!!",
-            accept=["text/plain", "application/pdf"],
-            max_size_mb=20,
-            timeout=180,
-        ).send()
-
-    file = files[0]
-
-    msg = cl.Message(content=f"Processing `{file.name}`...")
-    await msg.send()
-
-    loader = PyPDFLoader(file.path)
-    documents = loader.load()
-    # Split the text into chunks
-    texts = text_splitter.split_documents(documents)
-
-
-    # Create a Chroma vector store
-    embeddings = HuggingFaceEmbeddings(model_name = "sentence-transformers/all-MiniLM-L6-v2")
-    
-    # embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    
-    docsearch = await cl.make_async(FAISS.from_documents)(
-        texts, embeddings
+def get_text_chunks(text):
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=10000,
+        chunk_overlap=1000
     )
+    chunks = text_splitter.split_text(text)
+    return chunks
 
-    # Create a chain that uses the Chroma vector store
-    chain = RetrievalQAWithSourcesChain.from_chain_type(
-        ChatGoogleGenerativeAI(model="gemini-pro", temperature=0, streaming=True,convert_system_message_to_human=True),
-        chain_type="stuff",
-        retriever=docsearch.as_retriever(),
+def get_vector_store(text_chunks):
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    vector_store = FAISS.from_texts(texts=text_chunks, embedding=embeddings)
+    vector_store.save_local("faiss_index")
+
+def get_conversation_chain():
+    prompt_template = """
+        Answer the question clear and precise. If not provided the context return the result as
+        "Sorry I dont know the answer", don't provide the wrong answer.
+        Context:\n {context}?\n
+        Question:\n{question}\n
+        Answer:
+    """
+    model = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.3)
+    prompt = PromptTemplate(template=prompt_template, input_variables=['context', 'question'])
+    chain = load_qa_chain(model, chain_type='stuff', prompt=prompt)
+    return chain
+
+def user_input(user_question):
+    embeddings = GoogleGenerativeAIEmbeddings(model='models/embedding-001')
+    new_db = FAISS.load_local("faiss_index", embeddings)
+    docs = new_db.similarity_search(user_question)
+
+    chain = get_conversation_chain()
+    response = chain(
+        {"input_documents": docs, "question": user_question},
+        return_only_outputs=True
     )
+    st.write(response["output_text"])
 
-
-    # Save the metadata and texts in the user session
+def main():
+    st.set_page_config(page_title="Chat with multiple PDFs",
+                       page_icon=":books:")
+    # st.write(css, unsafe_allow_html=True)
     
-    cl.user_session.set("texts", texts)
+def main():
+    st.set_page_config(page_title="Chat with multiple PDFs",
+                       page_icon=":books:")
+    # st.write(css, unsafe_allow_html=True)
 
-    # Let the user know that the system is ready
-    msg.content = f"Processing `{file.name}` done. You can now ask questions!"
-    await msg.update()
+    if "conversation" not in st.session_state:
+        st.session_state.conversation = None
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = None
 
-    cl.user_session.set("chain", chain)
+    st.header("Chat with multiple PDFs with Gemini Pro :books:")
+    user_question = st.text_input("Ask a Question from the PDF Files")
 
+    if user_question:
+        user_input(user_question)
 
-@cl.on_message
-async def main(message:str):
+    with st.sidebar:
+        pdf_docs = st.file_uploader(
+            "Upload your PDF Files and Click on Process", 
+            accept_multiple_files=True
+        )
+        if st.button("Process"):
+            with st.spinner("Processing..."):
+                raw_text = get_pdf_text(pdf_docs)
+                text_chunks = get_text_chunks(raw_text)
+                get_vector_store(text_chunks)
+                st.session_state.conversation = get_conversation_chain()
+                st.success("Done")
 
-    chain = cl.user_session.get("chain")  # type: RetrievalQAWithSourcesChain
-    cb = cl.AsyncLangchainCallbackHandler(
-        stream_final_answer=True, answer_prefix_tokens=["FINAL", "ANSWER"]
-    )
-    cb.answer_reached = True
-    res = await chain.ainvoke(message, callbacks=[cb])
-
-    answer = res["answer"]
-    sources = res["sources"].strip()
-    source_elements = []
+if __name__ == "__main__":
+    main()
+        
     
-    # Get the metadata and texts from the user session
-    metadatas = cl.user_session.get("metadatas")
-    all_sources = [m["source"] for m in metadatas]
-    texts = cl.user_session.get("texts")
-
-    if sources:
-        found_sources = []
-
-        # Add the sources to the message
-        for source in sources.split(","):
-            source_name = source.strip().replace(".", "")
-            # Get the index of the source
-            try:
-                index = all_sources.index(source_name)
-            except ValueError:
-                continue
-            text = texts[index]
-            found_sources.append(source_name)
-            # Create the text element referenced in the message
-            source_elements.append(cl.Text(content=text, name=source_name))
-
-        if found_sources:
-            answer += f"\nSources: {', '.join(found_sources)}"
-        else:
-            answer += "\nNo sources found"
-
-    if cb.has_streamed_final_answer:
-        cb.final_stream.elements = source_elements
-        await cb.final_stream.update()
-    else:
-        await cl.Message(content=answer, elements=source_elements).send()
+          
